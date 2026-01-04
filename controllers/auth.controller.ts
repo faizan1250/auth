@@ -1,20 +1,25 @@
-import z from "zod";
 import catchErrors from "../utils/catchErrors";
-import { createAccount } from "../services/auth.service";
-import { CREATED } from "../constants/http";
-import { setAuthCookies } from "../utils/cookies";
-
-const registerSchema = z
-  .object({
-    email: z.email().min(1).max(255),
-    password: z.string().min(6).max(255),
-    confirmPassword: z.string().min(6).max(255),
-    userAgent: z.string().optional(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "passwords do not match",
-    path: ["confirmPassword"],
-  });
+import {
+  createAccount,
+  loginUser,
+  refreshUserAccessToken,
+  verifyEmail,
+} from "../services/auth.service";
+import { CREATED, OK, UNAUTHORIZED } from "../constants/http";
+import {
+  clearAuthCookies,
+  getAccessTokenCookieOptions,
+  getRefreshTokenCookieOptions,
+  setAuthCookies,
+} from "../utils/cookies";
+import {
+  loginSchema,
+  registerSchema,
+  verificationCodeSchema,
+} from "./auth.schemas";
+import { verifyToken } from "../utils/jwt";
+import { prisma } from "../config/db";
+import appAssert from "../utils/appAssert";
 
 export const registerHandler = catchErrors(async (req, res) => {
   const request = registerSchema.parse({
@@ -25,4 +30,57 @@ export const registerHandler = catchErrors(async (req, res) => {
   return setAuthCookies({ res, accessToken, refreshToken })
     .status(CREATED)
     .json(user);
+});
+
+export const loginHandler = catchErrors(async (req, res) => {
+  const request = loginSchema.parse({
+    ...req.body,
+    userAgent: req.headers["user-agent"],
+  });
+  const { accessToken, refreshToken } = await loginUser(request);
+  return setAuthCookies({ res, accessToken, refreshToken }).status(OK).json({
+    message: "login successful",
+  });
+});
+export const logoutHandler = catchErrors(async (req, res) => {
+  const accessToken = req.cookies["access-token"] as string | undefined;
+
+  const { payload } = verifyToken(accessToken || "");
+
+  if (payload) {
+    await prisma.session.deleteMany({
+      where: {
+        id: Number(payload.sessionId),
+      },
+    });
+  }
+  return clearAuthCookies(res).status(OK).json({
+    message: "logout successful",
+  });
+});
+export const refreshHandler = catchErrors(async (req, res) => {
+  const refreshToken = req.cookies["refresh-token"] as string | undefined;
+  appAssert(refreshToken, UNAUTHORIZED, "missing refresh-token");
+  const { accessToken, newRefreshToken } =
+    await refreshUserAccessToken(refreshToken);
+  if (newRefreshToken) {
+    res.cookie(
+      "refresh-token",
+      newRefreshToken,
+      getRefreshTokenCookieOptions(),
+    );
+  }
+  return res
+    .status(OK)
+    .cookie("accessToken", accessToken, getAccessTokenCookieOptions())
+    .json({
+      message: "Access Token Refreshed",
+    });
+});
+export const verifyEmailHandler = catchErrors(async (req, res) => {
+  const verificationCode = verificationCodeSchema.parse(req.params.code);
+  await verifyEmail(verificationCode);
+  return res.status(OK).json({
+    message: "email verified",
+  });
 });

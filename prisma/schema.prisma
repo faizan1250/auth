@@ -60,7 +60,7 @@ model Session {
 //////////////////////
 
 model VerificationCode {
-  id        Int                  @id @default(autoincrement())
+  id        String               @id @default(cuid()) // <-- verification code
   userId    Int
   type      VerificationCodeType
   createdAt DateTime             @default(now())
@@ -71,3 +71,4 @@ model VerificationCode {
   @@index([userId])
   @@map("verification_codes")
 }
+
