@@ -3,6 +3,9 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import errorHandler from "./middleware/errorHandler";
 import authRoutes from "./routes/auth.route";
+import authenticate from "./middleware/authenticate";
+import userRoutes from "./routes/user.route";
+import sessionRoutes from "./routes/session.route";
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -20,6 +23,9 @@ app.get("/health", (_req, res) => {
   });
 });
 app.use("/auth", authRoutes);
+app.use("/user", authenticate, userRoutes);
+app.use("/sessions", authenticate, sessionRoutes);
+
 app.use(errorHandler);
 
 app.listen(process.env.PORT, () =>
